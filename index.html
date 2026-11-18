@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>F1 Retro Pixel Racer</title>
+    <title>F1 Retro Pixel Racer - Curvas e Obstáculos</title>
     <style>
         body {
             background-color: #121214;
@@ -48,7 +48,6 @@
             background-color: #388e3c;
         }
 
-        /* Mantém o visual pixelado nítido sem borrar */
         canvas {
             display: block;
             image-rendering: pixelated;
@@ -58,14 +57,13 @@
 </head>
 <body>
 
-    <h1>🏎️ F1 RETRO PIXEL RACER 🏁</h1>
+    <h1>🏎️ F1 PIXEL RACER: CURVAS & OBSTÁCULOS 🚧</h1>
     <div id="ui">
         <div class="hud-item">Velocidade: <span id="speed">0</span> KM/H</div>
         <div class="hud-item">Distância: <span id="distance">0</span> m</div>
     </div>
 
     <div id="game-container">
-        <!-- Resolução interna menor para dar o efeito pixel art autêntico -->
         <canvas id="gameCanvas" width="240" height="320"></canvas>
     </div>
 
@@ -75,39 +73,51 @@
         const speedDisplay = document.getElementById("speed");
         const distanceDisplay = document.getElementById("distance");
 
-        // Configuração de Entrada (Teclado)
         const keys = {};
         window.addEventListener("keydown", e => keys[e.key] = true);
         window.addEventListener("keyup", e => keys[e.key] = false);
 
-        // Estado do Jogo
-        let gameState = "START"; // START, PLAYING, GAMEOVER
+        let gameState = "START";
         let scoreDistance = 0;
         let roadSpeed = 3;
         
-        // Jogador (Carro F1 Vermelho)
         let player = {
             x: 105,
             y: 240,
             width: 14,
             height: 24,
             speed: 0,
-            maxSpeed: 6,
-            steerSpeed: 2.5
+            maxSpeed: 6.5,
+            steerSpeed: 2.6
         };
 
-        // Pista
-        let roadLeft = 40;
-        let roadRight = 200;
-        let curveOffset = 0;
-        let curveTimer = 0;
+        // Estrutura da Pista
+        let baseRoadLeft = 50;
+        let baseRoadRight = 190;
+        let roadSegments = []; // Armazenará as curvas por linhas da tela
+        let segmentLength = 10;
+        let totalSegments = canvas.height / segmentLength + 5;
+        let trackOffset = 0; // Controla o deslocamento global da pista
 
-        // Inimigos (Outros carros de F1)
+        let obstacles = [];
         let enemies = [];
-        let enemySpawnTimer = 0;
+        let spawnTimer = 0;
 
-        // Linhas tracejadas centrais da pista
-        let stripeOffset = 0;
+        function initTrack() {
+            roadSegments = [];
+            let currentCurve = 0;
+            for (let i = 0; i < totalSegments * 2; i++) {
+                if (i % 25 === 0) {
+                    // Escolhe uma nova direção de curva de forma procedural
+                    currentCurve = (Math.random() - 0.5) * 2.2;
+                    if (Math.random() < 0.3) currentCurve = 0; // chances de trecho reto
+                }
+                roadSegments.push({
+                    curve: currentCurve,
+                    stripeOffset: i * segmentLength
+                });
+            }
+        }
 
         function resetGame() {
             player.x = 105;
@@ -115,83 +125,112 @@
             player.speed = 0;
             scoreDistance = 0;
             roadSpeed = 3;
+            obstacles = [];
             enemies = [];
-            curveOffset = 0;
-            curveTimer = 0;
+            initTrack();
             gameState = "PLAYING";
         }
 
         function update() {
             if (gameState !== "PLAYING") {
-                if (keys["Enter"] || keys[" "]) {
-                    resetGame();
-                }
+                if (keys["Enter"] || keys[" "]) resetGame();
                 return;
             }
 
-            // Distância percorrida
             scoreDistance += Math.floor(roadSpeed);
             distanceDisplay.innerText = scoreDistance;
-            speedDisplay.innerText = Math.floor(roadSpeed * 40);
+            speedDisplay.innerText = Math.floor(roadSpeed * 38);
 
-            // Controle de aceleração/velocidade
+            // Aceleração
             if (keys["ArrowUp"] || keys["w"]) {
                 if (roadSpeed < player.maxSpeed) roadSpeed += 0.05;
             } else {
-                if (roadSpeed > 2) roadSpeed -= 0.08; // desaceleração natural
+                if (roadSpeed > 2) roadSpeed -= 0.08;
             }
-
             if (keys["ArrowDown"] || keys["s"]) {
                 if (roadSpeed > 1) roadSpeed -= 0.15;
             }
 
-            // Direção (Esquerda / Direita)
-            if (keys["ArrowLeft"] || keys["a"]) {
-                player.x -= player.steerSpeed;
-            }
-            if (keys["ArrowRight"] || keys["d"]) {
-                player.x += player.steerSpeed;
-            }
+            // Direção do jogador
+            if (keys["ArrowLeft"] || keys["a"]) player.x -= player.steerSpeed;
+            if (keys["ArrowRight"] || keys["d"]) player.x += player.steerSpeed;
 
-            // Dinâmica da Pista (Curvas suaves automáticas)
-            curveTimer++;
-            if (curveTimer > 100) {
-                curveOffset += (Math.random() - 0.5) * 1.5;
-                // Limitar as curvas para não sumir da tela
-                if (curveOffset < -25) curveOffset = -25;
-                if (curveOffset > 25) curveOffset = 25;
-                if (Math.random() < 0.3) curveOffset = 0; // chance de reta
-                curveTimer = 0;
+            // Movimento da pista
+            trackOffset += roadSpeed;
+            if (trackOffset >= segmentLength) {
+                trackOffset -= segmentLength;
+                roadSegments.pop();
+                let lastCurve = roadSegments[0].curve;
+                if (Math.random() < 0.05) {
+                    lastCurve = (Math.random() - 0.5) * 2.5;
+                }
+                roadSegments.unshift({ curve: lastCurve, stripeOffset: 0 });
             }
 
-            let currentRoadLeft = roadLeft + curveOffset;
-            let currentRoadRight = roadRight + curveOffset;
+            // Posição atual da pista na altura do jogador
+            let playerSegmentIndex = Math.floor((player.y / segmentLength));
+            let currentSeg = roadSegments[playerSegmentIndex] || roadSegments[0];
+            
+            // Calculando limites das bordas com base na curvatura acumulada
+            let accumulatedCurve = 0;
+            for(let i=0; i<=playerSegmentIndex; i++) {
+                accumulatedCurve += roadSegments[i].curve * 1.2;
+            }
+            
+            let currentRoadLeft = baseRoadLeft + accumulatedCurve;
+            let currentRoadRight = baseRoadRight + accumulatedCurve;
 
-            // Movimento das faixas centrais da pista
-            stripeOffset += roadSpeed;
-            if (stripeOffset >= 20) stripeOffset = 0;
-
-            // Spawn de Inimigos
-            enemySpawnTimer++;
-            if (enemySpawnTimer > 50) {
-                let enemyX = currentRoadLeft + Math.random() * (currentRoadRight - currentRoadLeft - 16);
-                enemies.push({
-                    x: enemyX,
-                    y: -30,
-                    width: 14,
-                    height: 24,
-                    speed: 1.5 + Math.random() * 1.5,
-                    color: Math.random() > 0.5 ? "#2196f3" : "#ffeb3b" // Azul ou Amarelo
-                });
-                enemySpawnTimer = 0;
+            // Spawn de Inimigos e Obstáculos Fixos (Cones / Blocos)
+            spawnTimer++;
+            if (spawnTimer > 40) {
+                let spawnX = currentRoadLeft + 15 + Math.random() * (currentRoadRight - currentRoadLeft - 30);
+                
+                if (Math.random() < 0.4) {
+                    // Obstáculo Fixo (Bloco de Concreto / Barreira)
+                    obstacles.push({
+                        x: spawnX,
+                        y: -30,
+                        width: 12,
+                        height: 10,
+                        curveVal: accumulatedCurve
+                    });
+                } else {
+                    // Carro Inimigo
+                    enemies.push({
+                        x: spawnX,
+                        y: -30,
+                        width: 14,
+                        height: 24,
+                        speed: 1.5 + Math.random() * 1.5,
+                        color: Math.random() > 0.5 ? "#2196f3" : "#ffeb3b"
+                    });
+                }
+                spawnTimer = 0;
             }
 
-            // Atualizar Inimigos
+            // Atualizar Obstáculos Fixos
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.y += roadSpeed;
+
+                // Colisão com obstáculo fixo
+                if (
+                    player.x < obs.x + obs.width &&
+                    player.x + player.width > obs.x &&
+                    player.y < obs.y + obs.height &&
+                    player.y + player.height > obs.y
+                ) {
+                    gameState = "GAMEOVER";
+                }
+
+                if (obs.y > canvas.height + 30) obstacles.splice(i, 1);
+            }
+
+            // Atualizar Carros Inimigos
             for (let i = enemies.length - 1; i >= 0; i--) {
                 let en = enemies[i];
-                en.y += roadSpeed - en.speed; // Relativo à velocidade do jogador
+                en.y += roadSpeed - en.speed;
 
-                // Colisão com o jogador (AABB simples)
                 if (
                     player.x < en.x + en.width &&
                     player.x + player.width > en.x &&
@@ -201,87 +240,82 @@
                     gameState = "GAMEOVER";
                 }
 
-                // Remover inimigos que saíram da tela embaixo
-                if (en.y > canvas.height + 30) {
-                    enemies.splice(i, 1);
-                }
+                if (en.y > canvas.height + 30) enemies.splice(i, 1);
             }
 
-            // Colisão com as margens da pista (Grama/Barreira)
-            if (player.x < currentRoadLeft || player.x + player.width > currentRoadRight) {
-                // Diminui velocidade se sair para a grama
-                roadSpeed = Math.max(1.5, roadSpeed - 0.1);
+            // Saída da pista (Grama desacelera e causa batida se bater nas bordas externas extremas)
+            if (player.x < currentRoadLeft - 5 || player.x + player.width > currentRoadRight + 5) {
+                roadSpeed = Math.max(1.5, roadSpeed - 0.15);
+                if (player.x < currentRoadLeft - 15 || player.x + player.width > currentRoadRight + 15) {
+                    gameState = "GAMEOVER"; // bateu forte fora da pista
+                }
             }
         }
 
-        // Funções de desenho pixel art (desenhando retângulos pixelados)
         function drawPixelCar(x, y, colorBody, isPlayer = false) {
             let rx = Math.floor(x);
             let ry = Math.floor(y);
 
             // Pneus
             ctx.fillStyle = "#111";
-            ctx.fillRect(rx - 2, ry + 2, 2, 6);       // Dianteiro esquerdo
-            ctx.fillRect(rx + 14, ry + 2, 2, 6);      // Dianteiro direito
-            ctx.fillRect(rx - 2, ry + 16, 2, 6);      // Traseiro esquerdo
-            ctx.fillRect(rx + 14, ry + 16, 2, 6);     // Traseiro direito
+            ctx.fillRect(rx - 2, ry + 2, 2, 6);
+            ctx.fillRect(rx + 14, ry + 2, 2, 6);
+            ctx.fillRect(rx - 2, ry + 16, 2, 6);
+            ctx.fillRect(rx + 14, ry + 16, 2, 6);
 
             // Asas Traseiras
             ctx.fillStyle = "#333";
             ctx.fillRect(rx - 1, ry + 21, 16, 2);
 
-            // Corpo do Carro
+            // Corpo
             ctx.fillStyle = colorBody;
             ctx.fillRect(rx + 2, ry + 4, 10, 16);
 
-            // Bico / Asa Dianteira
+            // Bico Dianteiro
             ctx.fillStyle = isPlayer ? "#ffccd5" : "#ddd";
             ctx.fillRect(rx + 4, ry, 6, 4);
 
-            // Capacete do Piloto (Cockpit)
+            // Cockpit
             ctx.fillStyle = "#111";
             ctx.fillRect(rx + 5, ry + 10, 4, 4);
-            ctx.fillStyle = "#fff"; // viseira
-            ctx.fillRect(rx + 5, ry + 10, 4, 1);
         }
 
         function draw() {
-            // Limpar tela (Grama base)
+            // Fundo (Grama)
             ctx.fillStyle = "#2e7d32";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            let currentRoadLeft = roadLeft + curveOffset;
-            let currentRoadRight = roadRight + curveOffset;
+            // Desenhar Pista em segmentos para criar efeito de curvas suaves
+            let accumulatedCurve = 0;
+            for (let i = 0; i < roadSegments.length; i++) {
+                let y = i * segmentLength - trackOffset;
+                accumulatedCurve += roadSegments[i].curve * 1.2;
 
-            // Desenhar Pista (Asfalto cinza escuro)
-            ctx.fillStyle = "#212121";
-            ctx.beginPath();
-            ctx.moveTo(roadLeft, 0);
-            ctx.lineTo(roadRight, 0);
-            ctx.lineTo(currentRoadRight, canvas.height);
-            ctx.lineTo(currentRoadLeft, canvas.height);
-            ctx.closePath();
-            ctx.fill();
+                let rLeft = baseRoadLeft + accumulatedCurve;
+                let rRight = baseRoadRight + accumulatedCurve;
 
-            // Zebras laterais pixeladas (Vermelho e Branco)
-            const stripeWidth = 4;
-            ctx.fillStyle = "#f44336";
-            // Para simplificar no estilo retrô, desenhamos faixas baseadas no deslocamento
-            // (Um efeito visual simplificado de zebras correndo)
-            let zOffset = Math.floor(stripeOffset * 2) % 16;
-            for (let y = -16; y < canvas.height + 16; y += 16) {
-                let currentY = y + zOffset;
-                // Zebras Esquerda
-                ctx.fillStyle = (Math.floor(y / 16) % 2 === 0) ? "#f44336" : "#fff";
-                ctx.fillRect(currentRoadLeft - stripeWidth, currentY, stripeWidth, 8);
-                // Zebras Direita
-                ctx.fillRect(currentRoadRight, currentY, stripeWidth, 8);
+                // Asfalto
+                ctx.fillStyle = "#212121";
+                ctx.fillRect(rLeft, y, rRight - rLeft, segmentLength + 1);
+
+                // Zebras Laterais
+                ctx.fillStyle = (i % 2 === 0) ? "#f44336" : "#fff";
+                ctx.fillRect(rLeft - 3, y, 3, segmentLength + 1);
+                ctx.fillRect(rRight, y, 3, segmentLength + 1);
+
+                // Linha Central Tracejada
+                if (i % 4 < 2) {
+                    ctx.fillStyle = "#fff";
+                    ctx.fillRect((rLeft + rRight) / 2 - 1, y, 2, segmentLength + 1);
+                }
             }
 
-            // Linha tracejada central da pista
-            ctx.fillStyle = "#fff";
-            for (let y = -20 + (stripeOffset * 2) % 30; y < canvas.height; y += 30) {
-                ctx.fillRect((currentRoadLeft + currentRoadRight) / 2 - 1, y, 2, 12);
+            // Desenhar Obstáculos Fixos (Blocos de Concreto / Cones)
+            for (let obs of obstacles) {
+                ctx.fillStyle = "#ff9800"; // Laranja aviso
+                ctx.fillRect(Math.floor(obs.x), Math.floor(obs.y), obs.width, obs.height);
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(Math.floor(obs.x) + 2, Math.floor(obs.y) + 3, obs.width - 4, 2);
             }
 
             // Desenhar Inimigos
@@ -292,24 +326,24 @@
             // Desenhar Jogador
             drawPixelCar(player.x, player.y, "#f44336", true);
 
-            // Telas de Menu / Game Over
+            // Telas de Menu e Game Over
             if (gameState === "START") {
                 ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
                 ctx.fillStyle = "#ffeb3b";
-                ctx.font = "bold 14px 'Courier New'";
+                ctx.font = "bold 13px 'Courier New'";
                 ctx.textAlign = "center";
-                ctx.fillText("F1 PIXEL RACER", canvas.width / 2, canvas.height / 2 - 30);
+                ctx.fillText("F1 CURVAS & OBSTÁCULOS", canvas.width / 2, canvas.height / 2 - 30);
 
                 ctx.fillStyle = "#fff";
-                ctx.font = "10px 'Courier New'";
-                ctx.fillText("Use SETAS / WASD para dirigir", canvas.width / 2, canvas.height / 2 - 5);
-                ctx.fillText("Desvie dos carros rivais!", canvas.width / 2, canvas.height / 2 + 10);
+                ctx.font = "9px 'Courier New'";
+                ctx.fillText("Setas / WASD para pilotar", canvas.width / 2, canvas.height / 2 - 5);
+                ctx.fillText("Desvie dos carros e barreiras!", canvas.width / 2, canvas.height / 2 + 10);
                 
                 ctx.fillStyle = "#4caf50";
-                ctx.fillText("Pressione ENTER para Jogar", canvas.width / 2, canvas.height / 2 + 40);
-                ctx.textAlign = "left"; // reset
+                ctx.fillText("Pressione ENTER para Começar", canvas.width / 2, canvas.height / 2 + 40);
+                ctx.textAlign = "left";
             } 
             else if (gameState === "GAMEOVER") {
                 ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
@@ -326,7 +360,7 @@
 
                 ctx.fillStyle = "#ffeb3b";
                 ctx.fillText("Pressione ENTER p/ Reiniciar", canvas.width / 2, canvas.height / 2 + 30);
-                ctx.textAlign = "left"; // reset
+                ctx.textAlign = "left";
             }
         }
 
@@ -336,7 +370,7 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // Iniciar loop do jogo
+        initTrack();
         requestAnimationFrame(gameLoop);
     </script>
 </body>
