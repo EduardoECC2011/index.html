@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Snake: Fuga de Thanos</title>
+    <title>F1 Retro Pixel Racer</title>
     <style>
         body {
-            background-color: #1a1a1a;
-            color: #ffffff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121214;
+            color: #e1e1e6;
+            font-family: 'Courier New', Courier, monospace;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -19,234 +19,325 @@
         }
 
         h1 {
-            margin-bottom: 5px;
-            color: #d2a8ff;
-            text-shadow: 0 0 10px rgba(163, 113, 247, 0.5);
+            margin: 0 0 5px 0;
+            color: #f75a68;
+            text-shadow: 2px 2px #000;
+            font-size: 24px;
         }
 
-        p {
-            margin-top: 0;
-            margin-bottom: 15px;
-            color: #8b949e;
+        #ui {
+            display: flex;
+            gap: 20px;
+            font-size: 16px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .hud-item {
+            background: #202024;
+            padding: 5px 12px;
+            border-radius: 4px;
+            border: 2px solid #323238;
         }
 
         #game-container {
             position: relative;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
-            border: 4px solid #30363d;
-            border-radius: 8px;
-            background-color: #0d1117;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.8);
+            border: 4px solid #29292e;
+            border-radius: 6px;
+            background-color: #388e3c;
         }
 
+        /* Mantém o visual pixelado nítido sem borrar */
         canvas {
             display: block;
-        }
-
-        #scoreboard {
-            font-size: 20px;
-            font-weight: bold;
-            margin-bottom: 10px;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
         }
     </style>
 </head>
 <body>
 
-    <h1>🐍 Fuga do Thanos 🛡️</h1>
-    <p>Use as <b>Setas do Teclado</b> para fugir do Thanos e comer as gemas!</p>
-    <div id="scoreboard">Pontuação: <span id="score">0</span></div>
+    <h1>🏎️ F1 RETRO PIXEL RACER 🏁</h1>
+    <div id="ui">
+        <div class="hud-item">Velocidade: <span id="speed">0</span> KM/H</div>
+        <div class="hud-item">Distância: <span id="distance">0</span> m</div>
+    </div>
 
     <div id="game-container">
-        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        <!-- Resolução interna menor para dar o efeito pixel art autêntico -->
+        <canvas id="gameCanvas" width="240" height="320"></canvas>
     </div>
 
     <script>
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
-        const scoreElement = document.getElementById("score");
+        const speedDisplay = document.getElementById("speed");
+        const distanceDisplay = document.getElementById("distance");
 
-        const gridSize = 20;
-        const tileCount = canvas.width / gridSize;
+        // Configuração de Entrada (Teclado)
+        const keys = {};
+        window.addEventListener("keydown", e => keys[e.key] = true);
+        window.addEventListener("keyup", e => keys[e.key] = false);
 
-        let snake = [
-            { x: 10, y: 10 },
-            { x: 9, y: 10 },
-            { x: 8, y: 10 }
-        ];
-        let dx = 1;
-        let dy = 0;
+        // Estado do Jogo
+        let gameState = "START"; // START, PLAYING, GAMEOVER
+        let scoreDistance = 0;
+        let roadSpeed = 3;
+        
+        // Jogador (Carro F1 Vermelho)
+        let player = {
+            x: 105,
+            y: 240,
+            width: 14,
+            height: 24,
+            speed: 0,
+            maxSpeed: 6,
+            steerSpeed: 2.5
+        };
 
-        let food = { x: 5, y: 5 };
-        let thanos = { x: 15, y: 15 };
-        let score = 0;
-        let gameInterval;
-        let isGameOver = false;
+        // Pista
+        let roadLeft = 40;
+        let roadRight = 200;
+        let curveOffset = 0;
+        let curveTimer = 0;
 
-        // Controle de teclado
-        document.addEventListener("keydown", changeDirection);
+        // Inimigos (Outros carros de F1)
+        let enemies = [];
+        let enemySpawnTimer = 0;
 
-        function changeDirection(event) {
-            const keyPressed = event.keyCode;
-            const LEFT = 37, UP = 38, RIGHT = 39, DOWN = 40;
+        // Linhas tracejadas centrais da pista
+        let stripeOffset = 0;
 
-            const goingUp = dy === -1;
-            const goingDown = dy === 1;
-            const goingRight = dx === 1;
-            const goingLeft = dx === -1;
-
-            if (keyPressed === LEFT && !goingRight) { dx = -1; dy = 0; }
-            if (keyPressed === UP && !goingDown) { dx = 0; dy = -1; }
-            if (keyPressed === RIGHT && !goingLeft) { dx = 1; dy = 0; }
-            if (keyPressed === DOWN && !goingUp) { dx = 0; dy = 1; }
+        function resetGame() {
+            player.x = 105;
+            player.y = 240;
+            player.speed = 0;
+            scoreDistance = 0;
+            roadSpeed = 3;
+            enemies = [];
+            curveOffset = 0;
+            curveTimer = 0;
+            gameState = "PLAYING";
         }
 
-        function main() {
-            if (checkGameOver()) {
-                isGameOver = true;
-                clearInterval(gameInterval);
-                drawGameOverScreen();
+        function update() {
+            if (gameState !== "PLAYING") {
+                if (keys["Enter"] || keys[" "]) {
+                    resetGame();
+                }
                 return;
             }
 
-            clearCanvas();
-            drawFood();
-            moveSnake();
-            moveThanos();
-            drawSnake();
-            drawThanos();
-        }
+            // Distância percorrida
+            scoreDistance += Math.floor(roadSpeed);
+            distanceDisplay.innerText = scoreDistance;
+            speedDisplay.innerText = Math.floor(roadSpeed * 40);
 
-        function clearCanvas() {
-            ctx.fillStyle = "#0d1117";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Desenhar grade leve de fundo
-            ctx.strokeStyle = "#161b22";
-            for (let i = 0; i < tileCount; i++) {
-                ctx.beginPath();
-                ctx.moveTo(i * gridSize, 0);
-                ctx.lineTo(i * gridSize, canvas.height);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(0, i * gridSize);
-                ctx.lineTo(canvas.width, i * gridSize);
-                ctx.stroke();
-            }
-        }
-
-        function drawSnake() {
-            snake.forEach((part, index) => {
-                // Cabeça da cobra diferente do corpo
-                ctx.fillStyle = index === 0 ? "#2ea043" : "#3fb950";
-                ctx.fillRect(part.x * gridSize, part.y * gridSize, gridSize - 2, gridSize - 2);
-            });
-        }
-
-        function moveSnake() {
-            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
-            snake.unshift(head);
-
-            // Comer comida
-            if (head.x === food.x && head.y === food.y) {
-                score += 10;
-                scoreElement.innerText = score;
-                generateFood();
+            // Controle de aceleração/velocidade
+            if (keys["ArrowUp"] || keys["w"]) {
+                if (roadSpeed < player.maxSpeed) roadSpeed += 0.05;
             } else {
-                snake.pop();
-            }
-        }
-
-        function generateFood() {
-            food.x = Math.floor(Math.random() * tileCount);
-            food.y = Math.floor(Math.random() * tileCount);
-            // Garantir que a comida não apareça em cima da cobra
-            snake.forEach(part => {
-                if (part.x === food.x && part.y === food.y) generateFood();
-            });
-        }
-
-        function drawFood() {
-            // Gema do Infinito (comida brilhante)
-            ctx.fillStyle = "#58a6ff";
-            ctx.beginPath();
-            ctx.arc(
-                (food.x * gridSize) + gridSize / 2, 
-                (food.y * gridSize) + gridSize / 2, 
-                gridSize / 2 - 2, 0, 2 * Math.PI
-            );
-            ctx.fill();
-        }
-
-        function moveThanos() {
-            // IA simples: Thanos persegue a cabeça da cobra passo a passo
-            const head = snake[0];
-            
-            // Thanos se move a cada X ciclos ou de forma mais lenta/rápida dependendo da lógica. 
-            // Aqui ele se move a cada frame junto com a cobra, mas escolhe o eixo de maior distância.
-            if (Math.random() < 0.7) { // Deixa o Thanos um pouco mais inteligente/rápido
-                if (thanos.x < head.x) thanos.x++;
-                else if (thanos.x > head.x) thanos.x--;
-
-                if (thanos.y < head.y) thanos.y++;
-                else if (thanos.y > head.y) thanos.y--;
-            }
-        }
-
-        function drawThanos() {
-            // Representando o Thanos como um quadrado roxo com capacete dourado
-            ctx.fillStyle = "#8957e5"; // Roxo Thanos
-            ctx.fillRect(thanos.x * gridSize, thanos.y * gridSize, gridSize - 2, gridSize - 2);
-            
-            // Detalhe do elmo dourado
-            ctx.fillStyle = "#d29922";
-            ctx.fillRect(thanos.x * gridSize + 2, thanos.y * gridSize + 2, gridSize - 6, 4);
-        }
-
-        function checkGameOver() {
-            const head = snake[0];
-
-            // Colisão com as paredes
-            const hitLeftWall = head.x < 0;
-            const hitRightWall = head.x >= tileCount;
-            const hitToptWall = head.y < 0;
-            const hitBottomWall = head.y >= tileCount;
-
-            if (hitLeftWall || hitRightWall || hitToptWall || hitBottomWall) {
-                return true;
+                if (roadSpeed > 2) roadSpeed -= 0.08; // desaceleração natural
             }
 
-            // Colisão com o próprio corpo
-            for (let i = 1; i < snake.length; i++) {
-                if (head.x === snake[i].x && head.y === snake[i].y) {
-                    return true;
+            if (keys["ArrowDown"] || keys["s"]) {
+                if (roadSpeed > 1) roadSpeed -= 0.15;
+            }
+
+            // Direção (Esquerda / Direita)
+            if (keys["ArrowLeft"] || keys["a"]) {
+                player.x -= player.steerSpeed;
+            }
+            if (keys["ArrowRight"] || keys["d"]) {
+                player.x += player.steerSpeed;
+            }
+
+            // Dinâmica da Pista (Curvas suaves automáticas)
+            curveTimer++;
+            if (curveTimer > 100) {
+                curveOffset += (Math.random() - 0.5) * 1.5;
+                // Limitar as curvas para não sumir da tela
+                if (curveOffset < -25) curveOffset = -25;
+                if (curveOffset > 25) curveOffset = 25;
+                if (Math.random() < 0.3) curveOffset = 0; // chance de reta
+                curveTimer = 0;
+            }
+
+            let currentRoadLeft = roadLeft + curveOffset;
+            let currentRoadRight = roadRight + curveOffset;
+
+            // Movimento das faixas centrais da pista
+            stripeOffset += roadSpeed;
+            if (stripeOffset >= 20) stripeOffset = 0;
+
+            // Spawn de Inimigos
+            enemySpawnTimer++;
+            if (enemySpawnTimer > 50) {
+                let enemyX = currentRoadLeft + Math.random() * (currentRoadRight - currentRoadLeft - 16);
+                enemies.push({
+                    x: enemyX,
+                    y: -30,
+                    width: 14,
+                    height: 24,
+                    speed: 1.5 + Math.random() * 1.5,
+                    color: Math.random() > 0.5 ? "#2196f3" : "#ffeb3b" // Azul ou Amarelo
+                });
+                enemySpawnTimer = 0;
+            }
+
+            // Atualizar Inimigos
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                let en = enemies[i];
+                en.y += roadSpeed - en.speed; // Relativo à velocidade do jogador
+
+                // Colisão com o jogador (AABB simples)
+                if (
+                    player.x < en.x + en.width &&
+                    player.x + player.width > en.x &&
+                    player.y < en.y + en.height &&
+                    player.y + player.height > en.y
+                ) {
+                    gameState = "GAMEOVER";
+                }
+
+                // Remover inimigos que saíram da tela embaixo
+                if (en.y > canvas.height + 30) {
+                    enemies.splice(i, 1);
                 }
             }
 
-            // Colisão com o Thanos
-            if (head.x === thanos.x && head.y === thanos.y) {
-                return true;
+            // Colisão com as margens da pista (Grama/Barreira)
+            if (player.x < currentRoadLeft || player.x + player.width > currentRoadRight) {
+                // Diminui velocidade se sair para a grama
+                roadSpeed = Math.max(1.5, roadSpeed - 0.1);
             }
-
-            return false;
         }
 
-        function drawGameOverScreen() {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+        // Funções de desenho pixel art (desenhando retângulos pixelados)
+        function drawPixelCar(x, y, colorBody, isPlayer = false) {
+            let rx = Math.floor(x);
+            let ry = Math.floor(y);
+
+            // Pneus
+            ctx.fillStyle = "#111";
+            ctx.fillRect(rx - 2, ry + 2, 2, 6);       // Dianteiro esquerdo
+            ctx.fillRect(rx + 14, ry + 2, 2, 6);      // Dianteiro direito
+            ctx.fillRect(rx - 2, ry + 16, 2, 6);      // Traseiro esquerdo
+            ctx.fillRect(rx + 14, ry + 16, 2, 6);     // Traseiro direito
+
+            // Asas Traseiras
+            ctx.fillStyle = "#333";
+            ctx.fillRect(rx - 1, ry + 21, 16, 2);
+
+            // Corpo do Carro
+            ctx.fillStyle = colorBody;
+            ctx.fillRect(rx + 2, ry + 4, 10, 16);
+
+            // Bico / Asa Dianteira
+            ctx.fillStyle = isPlayer ? "#ffccd5" : "#ddd";
+            ctx.fillRect(rx + 4, ry, 6, 4);
+
+            // Capacete do Piloto (Cockpit)
+            ctx.fillStyle = "#111";
+            ctx.fillRect(rx + 5, ry + 10, 4, 4);
+            ctx.fillStyle = "#fff"; // viseira
+            ctx.fillRect(rx + 5, ry + 10, 4, 1);
+        }
+
+        function draw() {
+            // Limpar tela (Grama base)
+            ctx.fillStyle = "#2e7d32";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            ctx.fillStyle = "#f85149";
-            ctx.font = "bold 30px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 15);
+            let currentRoadLeft = roadLeft + curveOffset;
+            let currentRoadRight = roadRight + curveOffset;
 
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "16px Arial";
-            ctx.fillText("O Thanos te alcançou!", canvas.width / 2, canvas.height / 2 + 15);
-            ctx.fillText("Atualize a página para jogar de novo", canvas.width / 2, canvas.height / 2 + 45);
+            // Desenhar Pista (Asfalto cinza escuro)
+            ctx.fillStyle = "#212121";
+            ctx.beginPath();
+            ctx.moveTo(roadLeft, 0);
+            ctx.lineTo(roadRight, 0);
+            ctx.lineTo(currentRoadRight, canvas.height);
+            ctx.lineTo(currentRoadLeft, canvas.height);
+            ctx.closePath();
+            ctx.fill();
+
+            // Zebras laterais pixeladas (Vermelho e Branco)
+            const stripeWidth = 4;
+            ctx.fillStyle = "#f44336";
+            // Para simplificar no estilo retrô, desenhamos faixas baseadas no deslocamento
+            // (Um efeito visual simplificado de zebras correndo)
+            let zOffset = Math.floor(stripeOffset * 2) % 16;
+            for (let y = -16; y < canvas.height + 16; y += 16) {
+                let currentY = y + zOffset;
+                // Zebras Esquerda
+                ctx.fillStyle = (Math.floor(y / 16) % 2 === 0) ? "#f44336" : "#fff";
+                ctx.fillRect(currentRoadLeft - stripeWidth, currentY, stripeWidth, 8);
+                // Zebras Direita
+                ctx.fillRect(currentRoadRight, currentY, stripeWidth, 8);
+            }
+
+            // Linha tracejada central da pista
+            ctx.fillStyle = "#fff";
+            for (let y = -20 + (stripeOffset * 2) % 30; y < canvas.height; y += 30) {
+                ctx.fillRect((currentRoadLeft + currentRoadRight) / 2 - 1, y, 2, 12);
+            }
+
+            // Desenhar Inimigos
+            for (let en of enemies) {
+                drawPixelCar(en.x, en.y, en.color, false);
+            }
+
+            // Desenhar Jogador
+            drawPixelCar(player.x, player.y, "#f44336", true);
+
+            // Telas de Menu / Game Over
+            if (gameState === "START") {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = "#ffeb3b";
+                ctx.font = "bold 14px 'Courier New'";
+                ctx.textAlign = "center";
+                ctx.fillText("F1 PIXEL RACER", canvas.width / 2, canvas.height / 2 - 30);
+
+                ctx.fillStyle = "#fff";
+                ctx.font = "10px 'Courier New'";
+                ctx.fillText("Use SETAS / WASD para dirigir", canvas.width / 2, canvas.height / 2 - 5);
+                ctx.fillText("Desvie dos carros rivais!", canvas.width / 2, canvas.height / 2 + 10);
+                
+                ctx.fillStyle = "#4caf50";
+                ctx.fillText("Pressione ENTER para Jogar", canvas.width / 2, canvas.height / 2 + 40);
+                ctx.textAlign = "left"; // reset
+            } 
+            else if (gameState === "GAMEOVER") {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = "#f44336";
+                ctx.font = "bold 16px 'Courier New'";
+                ctx.textAlign = "center";
+                ctx.fillText("BATIDA!", canvas.width / 2, canvas.height / 2 - 25);
+
+                ctx.fillStyle = "#fff";
+                ctx.font = "10px 'Courier New'";
+                ctx.fillText(`Distância: ${scoreDistance} m`, canvas.width / 2, canvas.height / 2);
+
+                ctx.fillStyle = "#ffeb3b";
+                ctx.fillText("Pressione ENTER p/ Reiniciar", canvas.width / 2, canvas.height / 2 + 30);
+                ctx.textAlign = "left"; // reset
+            }
         }
 
-        // Iniciar o jogo
-        generateFood();
-        gameInterval = setInterval(main, 120); // Velocidade do jogo (quanto menor, mais rápido)
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Iniciar loop do jogo
+        requestAnimationFrame(gameLoop);
     </script>
 </body>
 </html>
