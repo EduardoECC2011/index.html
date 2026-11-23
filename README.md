@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/35252011/README.md)
 # 🏎️ Retro F1 Grand Prix (Pixel Apex GP)
 
 Um jogo de corrida retrô em **2D com visão aérea (top-down)** no estilo **pixel art** clássico dos anos 90 e era PS1/PS2 (*Micro Machines V3*, *Super Monaco GP*, *Neo Drift Out*, *Grand Prix Challenge*), desenvolvido puramente em **HTML5, Canvas e JavaScript Vanilla**.
